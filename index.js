@@ -15,7 +15,10 @@ const getPriceData = async (synth) => {
 const calculateIndex = (indexes) => {
     let value = new Decimal(0);
     indexes.forEach(i => {
-        value = value.plus(new Decimal(i.units).times(new Decimal(i.priceData.rate)));
+        const price = i.priceData.rate;
+        if (price <= 0)
+            throw "invalid price";
+        value = value.plus(new Decimal(i.units).times(new Decimal(price)))
     });
     return value.toNumber()
 };
@@ -26,9 +29,26 @@ const createRequest = async (input, callback) => {
     const data = datas.find(d => d.name.toLowerCase() === asset.toLowerCase());
     await Promise.all(data.index.map(async (synth) => {
         synth.priceData = await getPriceData(synth.symbol)
-    }));
+    })).catch(err => {
+        callback(500, {
+            jobRunID: input.id,
+            status: 'errored',
+            error: err,
+            statusCode: 500
+        })
+    })
 
-    data.result = calculateIndex(data.index);
+    try {
+        data.result = calculateIndex(data.index);
+    } catch (e) {
+        callback(500, {
+            jobRunID: input.id,
+            status: 'errored',
+            error: "failed getting price",
+            statusCode: 500
+        });
+        return
+    }
 
     callback(200, {
         jobRunID: input.id,
